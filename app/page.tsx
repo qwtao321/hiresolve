@@ -60,19 +60,42 @@ async function readFileAsDataURL(file: File): Promise<string> {
   });
 }
 
+/** Resize image to max 1024px on longest side and re-encode as JPEG (quality 0.85).
+ *  Keeps base64 payload well under GLM's size limit. */
+async function compressImage(file: File): Promise<string> {
+  const raw = await readFileAsDataURL(file);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1024;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width >= height) { height = Math.round((height / width) * MAX); width = MAX; }
+        else { width = Math.round((width / height) * MAX); height = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => resolve(raw); // fallback to original
+    img.src = raw;
+  });
+}
+
 async function parseFile(file: File): Promise<{ text: string; preview?: string }> {
   if (file.type === "application/pdf") {
     const text = await extractPdfText(file);
     return { text };
   }
   if (IMAGE_TYPES.includes(file.type)) {
-    const preview = await readFileAsDataURL(file);
-    // Image OCR is backend-bound; provide a descriptive placeholder so mock analysis still runs
+    // Compress to ≤1024px / JPEG 0.85 before sending to GLM vision API
+    const compressed = await compressImage(file);
     const placeholder =
       `[图片文件：${file.name}（${(file.size / 1024).toFixed(0)} KB）]\n` +
-      `图片内容已上传，接入 OCR 服务后将自动提取文字。\n` +
-      `当前模拟分析基于文件元信息运行。`;
-    return { text: placeholder, preview };
+      `图片已压缩上传，GLM 视觉模型将直接读取图片内容进行分析。`;
+    return { text: placeholder, preview: compressed };
   }
   // .txt / .md
   const text = await readFileAsText(file);
