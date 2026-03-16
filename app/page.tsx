@@ -23,6 +23,12 @@ type ParseState = "idle" | "parsing" | "done" | "error";
 // ─── File Parsing ─────────────────────────────────────────────────────────────
 const ACCEPT = ".txt,.md,.pdf,.jpg,.jpeg,.png,.webp,.gif";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const IMAGE_PLACEHOLDER_PREFIX = "[图片已上传：";
+
+/** Returns true when the field only contains the auto-generated image placeholder */
+function isImagePlaceholder(text: string): boolean {
+  return text.trimStart().startsWith(IMAGE_PLACEHOLDER_PREFIX);
+}
 
 async function extractPdfText(file: File): Promise<string> {
   // Lazy-load pdfjs-dist only on the client, avoiding SSR DOMMatrix errors
@@ -254,6 +260,8 @@ function InputCard({
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
+  const needsText = isImagePlaceholder(value);
+
   return (
     <NeuCard className="flex-1 p-8">
       <div className="flex items-center gap-3 mb-5">
@@ -272,11 +280,33 @@ function InputCard({
         </div>
       </div>
 
+      {/* Yellow banner when image is uploaded but text not yet pasted */}
+      {needsText && (
+        <div
+          className="mb-3 px-3 py-2.5 rounded-xl flex items-start gap-2 text-xs"
+          style={{
+            background: "#fffbeb",
+            boxShadow: "inset 1px 1px 3px #e8d88a, inset -1px -1px 3px #fffef5",
+            color: "#92650a",
+          }}
+        >
+          <span className="flex-shrink-0 mt-0.5">✏️</span>
+          <span>
+            图片已上传为预览。请将图片中的文字<strong>复制粘贴</strong>到下方文本框，
+            AI 将基于文字内容进行分析。
+          </span>
+        </div>
+      )}
+
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full h-48 resize-none bg-transparent text-sm text-[#3d4166] placeholder-[#b8bdd4] outline-none leading-relaxed"
+        className="w-full h-48 resize-none bg-transparent text-sm leading-relaxed outline-none transition-colors duration-200"
+        style={{
+          color: needsText ? "#b8bdd4" : "#3d4166",
+          borderBottom: needsText ? "1.5px dashed #f59e0b" : "none",
+        }}
       />
 
       {preview && <ImagePreview src={preview} onClear={onClearPreview} />}
@@ -288,14 +318,13 @@ function InputCard({
           accept={ACCEPT}
           className="hidden"
           onChange={onFileChange}
-          // allow re-selecting the same file
           onClick={(e) => ((e.target as HTMLInputElement).value = "")}
         />
         <UploadButton onClick={onUploadClick} parsing={parsing} />
         <span className="text-[10px] text-[#b8bdd4]">
           TXT · MD · PDF · JPG · PNG · WEBP · GIF
         </span>
-        {value && !preview && (
+        {value && !preview && !needsText && (
           <span className="ml-auto text-[11px] text-[#9aa0bb]">{value.length} 字符</span>
         )}
       </div>
@@ -365,7 +394,9 @@ export default function Home() {
     }
   };
 
-  const canAnalyze = resume.trim().length > 0 && jd.trim().length > 0;
+  const resumeReady = resume.trim().length > 0 && !isImagePlaceholder(resume);
+  const jdReady = jd.trim().length > 0 && !isImagePlaceholder(jd);
+  const canAnalyze = resumeReady && jdReady;
   const scoreColor = result ? getScoreColor(result.matchScore) : "#5b6af0";
 
   return (
@@ -464,6 +495,10 @@ export default function Home() {
                 </svg>
                 AI 分析中…
               </span>
+            ) : !resumeReady ? (
+              "请先填写简历内容 ↑"
+            ) : !jdReady ? (
+              "请先填写岗位 JD ↑"
             ) : (
               "开始 AI 分析 →"
             )}
