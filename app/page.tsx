@@ -14,6 +14,7 @@ interface InterviewQA {
 }
 interface AnalysisResult {
   matchScore: number;
+  gaps?: string[];
   suggestions: RewriteSuggestion[];
   interviewQA: InterviewQA[];
 }
@@ -532,6 +533,28 @@ export default function Home() {
                     />
                   </div>
                 </div>
+
+                {/* Key Gaps */}
+                {result.gaps && result.gaps.length > 0 && (
+                  <div className="mt-6 pt-5 border-t border-[#d1d5e2]">
+                    <p className="text-[10px] uppercase tracking-[0.15em] text-[#e8795a] mb-3 font-semibold">
+                      ⚡ 关键差距
+                    </p>
+                    <ul className="space-y-2">
+                      {result.gaps.map((gap, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <span
+                            className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 mt-0.5"
+                            style={{ background: "#e8795a" }}
+                          >
+                            {i + 1}
+                          </span>
+                          <span className="text-sm text-[#3d4166] leading-relaxed">{gap}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </NeuCard>
 
