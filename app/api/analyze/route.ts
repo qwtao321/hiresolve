@@ -25,6 +25,12 @@ function buildPrompt(resume: string, jd: string): string {
 - 每个问题必须锁定简历中某个具体项目或技术，并追问其边界场景、异常处理或规模挑战
 - 示例格式："你在 [项目X] 中使用了 [技术Y]，当遇到 [场景Z] 时，你如何保证数据一致性？"
 
+【防幻觉铁律 — 最高优先级】
+- suggestions 的 original 字段：必须是简历原文的逐字复制，不得修改任何一个字，不得补充、推断或虚构。
+- 如果简历中找不到足够的可优化语句，suggestions 数量可以少于 3 条，绝对禁止捏造原文。
+- interviewQA 的问题：必须基于简历中真实存在的项目名称、技术名称或经历，禁止引用简历中未提及的内容。
+- 如果简历内容极少或为空，matchScore 给 0，suggestions 给空数组 []，并在 gaps 中说明"简历内容不足以评估"。
+
 【输出格式 — 只输出合法 JSON，禁止 markdown 代码块和多余文字】
 
 {
@@ -32,18 +38,16 @@ function buildPrompt(resume: string, jd: string): string {
   "gaps": [<关键差距1>, <关键差距2>],
   "suggestions": [
     {
-      "original": "<从简历摘取的原始表述，字数不超过30字>",
+      "original": "<简历原文逐字复制，禁止任何改动或虚构>",
       "improved": "<工程化改写，严格包含 S/A/R 三要素且均量化>",
       "tip": "<一句话指出原文最致命的缺陷>"
     }
-    // 共3条
   ],
   "interviewQA": [
     {
-      "question": "<基于简历具体项目/技术漏洞的追问，禁止通用题>",
+      "question": "<必须引用简历中真实存在的项目或技术，禁止通用题>",
       "answer": "<STAR结构回答，S含规模，A含具体技术手段，R含量化结果>"
     }
-    // 共5条
   ]
 }
 
