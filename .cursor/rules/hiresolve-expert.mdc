@@ -1,0 +1,76 @@
+---
+description: HireSolve 项目专家规则 — 技术栈、UI 规范、API 约定
+alwaysApply: true
+---
+
+# HireSolve 项目规范
+
+## 技术栈
+
+- **框架**：Next.js 16 App Router，`"use client"` 用于含 hooks 的组件
+- **样式**：Tailwind CSS v4（CSS-first，无 `tailwind.config.js`，主题写在 `globals.css` 的 `@theme` 块）
+- **语言**：TypeScript 严格模式，所有接口必须定义类型
+- **部署**：Vercel，自定义域名 `hire.thesolve.cloud`，代码托管 GitHub `qwtao321/hiresolve`
+
+## UI 设计规范
+
+**拟物风格（Neumorphic）**，背景色 `#E8EBF0`，光影双色 `#c5c9d1`（暗）/ `#ffffff`（亮）。
+
+```css
+/* 凸起卡片 */
+box-shadow: 6px 6px 16px #c5c9d1, -6px -6px 16px #ffffff;
+/* 凹陷/按下 */
+box-shadow: inset 2px 2px 5px #c5c9d1, inset -2px -2px 5px #ffffff;
+/* 悬停上浮 */
+box-shadow: 10px 10px 24px #c5c9d1, -10px -10px 24px #ffffff;
+transform: translateY(-3px);
+```
+
+**主色调**：`#5b6af0`（品牌紫蓝）/ `#1a1c2e`（深色文字）/ `#9aa0bb`（辅助文字）
+
+**不使用** Tailwind 内置 shadow 类处理拟物阴影，改用 `style={{ boxShadow: "..." }}`。
+
+## GLM API 约定
+
+- **模型**：`glm-4-flash`（文本，免费）
+- **⚠️ glm-4v-flash 不支持 Base64 图片**，只接受公网 URL；目前图片上传仅作本地预览
+- **API Key**：存储在 `GLM_API_KEY` 环境变量，代码中必须 `.trim()` 去除换行符
+- **API Route**：`app/api/analyze/route.ts`，只接收 `{ resume, jd }` 文字字段
+- **输出格式**：要求模型返回纯 JSON（无 markdown 代码块），路由层做 strip + parse 兜底
+
+## 文件解析规范
+
+- **PDF**：`pdfjs-dist` 动态懒加载（`await import("pdfjs-dist")`），避免 SSR `DOMMatrix` 报错
+- **Worker**：`/public/pdf.worker.min.js` 本地托管
+- **图片**：Canvas 压缩至长边 ≤ 1024px / JPEG 0.85，仅用于本地预览，不发送给模型
+
+## 组件模式
+
+```tsx
+// ✅ 拟物卡片：用 state 控制悬停，style 写阴影
+function NeuCard({ children, hover = true }) {
+  const [lifted, setLifted] = useState(false);
+  return (
+    <div
+      style={{ boxShadow: lifted ? "10px 10px 24px ..." : "6px 6px 16px ..." }}
+      onMouseEnter={() => hover && setLifted(true)}
+      onMouseLeave={() => hover && setLifted(false)}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ✅ pdfjs 必须懒加载
+async function extractPdfText(file) {
+  const pdfjsLib = await import("pdfjs-dist"); // ← 不能顶层 import
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+  ...
+}
+```
+
+## 错误处理原则
+
+- API Route 中将 GLM 原始错误信息透传给前端（不只返回状态码）
+- 前端分析失败时展示红色内嵌提示框，不弹 alert
+- 文件解析失败时降级为提示用户手动粘贴文本
