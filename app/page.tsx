@@ -1,10 +1,6 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-
-// Point to the local worker copy in /public
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface RewriteSuggestion {
@@ -28,6 +24,10 @@ const ACCEPT = ".txt,.md,.pdf,.jpg,.jpeg,.png,.webp,.gif";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 async function extractPdfText(file: File): Promise<string> {
+  // Lazy-load pdfjs-dist only on the client, avoiding SSR DOMMatrix errors
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const pages: string[] = [];
