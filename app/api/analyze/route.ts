@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const GLM_API = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
-// Use glm-4v-flash for vision (images), glm-4-flash for text-only (faster/cheaper)
-const MODEL_VISION = "glm-4v-flash";
-const MODEL_TEXT = "glm-4-flash";
+// glm-4v-flash only accepts public URLs (not base64); use glm-4-flash for all text analysis
+const MODEL = "glm-4-flash";
 
 function buildPrompt(resume: string, jd: string): string {
   return `你是一位资深 HR 顾问和求职教练。请严格分析以下简历与岗位 JD，输出 JSON 格式结果。
@@ -26,36 +25,10 @@ ${resume}
 ${jd}`;
 }
 
-type VisionContent = Array<
-  | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string } }
->;
-
-function buildMessages(
-  resume: string,
-  jd: string,
-  resumeImage?: string,
-  jdImage?: string
-): { model: string; messages: { role: string; content: string | VisionContent }[] } {
-  const hasImages = !!(resumeImage || jdImage);
-
-  if (!hasImages) {
-    return {
-      model: MODEL_TEXT,
-      messages: [{ role: "user", content: buildPrompt(resume, jd) }],
-    };
-  }
-
-  // Multi-modal: images first, then text prompt
-  const content: VisionContent = [];
-  if (resumeImage) content.push({ type: "image_url", image_url: { url: resumeImage } });
-  if (jdImage) content.push({ type: "image_url", image_url: { url: jdImage } });
-  content.push({ type: "text", text: buildPrompt(resume, jd) });
-
-  return {
-    model: MODEL_VISION,
-    messages: [{ role: "user", content }],
-  };
+// glm-4v-flash only supports public URLs, not base64.
+// We always use glm-4-flash (text) — images are shown as previews client-side only.
+function buildMessages(resume: string, jd: string) {
+  return [{ role: "user", content: buildPrompt(resume, jd) }];
 }
 
 export async function POST(req: NextRequest) {
@@ -65,19 +38,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "GLM_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { resume: string; jd: string; resumeImage?: string; jdImage?: string };
+  let body: { resume: string; jd: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { resume, jd, resumeImage, jdImage } = body;
+  const { resume, jd } = body;
   if (!resume?.trim() || !jd?.trim()) {
     return NextResponse.json({ error: "resume and jd are required" }, { status: 400 });
   }
 
-  const { model, messages } = buildMessages(resume, jd, resumeImage, jdImage);
+  const messages = buildMessages(resume, jd);
 
   let glmRes: Response;
   try {
@@ -87,7 +60,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 2048 }),
+      body: JSON.stringify({ model: MODEL, messages, temperature: 0.7, max_tokens: 2048 }),
     });
   } catch (err) {
     console.error("GLM network error:", err);

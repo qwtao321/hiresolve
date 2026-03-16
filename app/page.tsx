@@ -90,11 +90,11 @@ async function parseFile(file: File): Promise<{ text: string; preview?: string }
     return { text };
   }
   if (IMAGE_TYPES.includes(file.type)) {
-    // Compress to ≤1024px / JPEG 0.85 before sending to GLM vision API
+    // Generate compressed preview for display; image is NOT sent to GLM (base64 unsupported)
     const compressed = await compressImage(file);
     const placeholder =
-      `[图片文件：${file.name}（${(file.size / 1024).toFixed(0)} KB）]\n` +
-      `图片已压缩上传，GLM 视觉模型将直接读取图片内容进行分析。`;
+      `[图片已上传：${file.name}（${(file.size / 1024).toFixed(0)} KB）]\n\n` +
+      `请将图片中的文字内容手动粘贴到此处，AI 将基于文字内容进行分析。`;
     return { text: placeholder, preview: compressed };
   }
   // .txt / .md
@@ -103,16 +103,12 @@ async function parseFile(file: File): Promise<{ text: string; preview?: string }
 }
 
 // ─── Real API Call ────────────────────────────────────────────────────────────
-async function callAnalyzeAPI(
-  resume: string,
-  jd: string,
-  resumeImage?: string,
-  jdImage?: string
-): Promise<AnalysisResult> {
+// glm-4v-flash only supports public URLs (not base64), so we send text only.
+async function callAnalyzeAPI(resume: string, jd: string): Promise<AnalysisResult> {
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resume, jd, resumeImage, jdImage }),
+    body: JSON.stringify({ resume, jd }),
   });
 
   if (!res.ok) {
@@ -213,9 +209,9 @@ function ImagePreview({ src, onClear }: { src: string; onClear: () => void }) {
         <img src={src} alt="preview" className="w-full h-full object-cover" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] text-[#5b6af0]">图片已上传</p>
+        <p className="text-[11px] text-[#5b6af0] font-medium">图片预览</p>
         <p className="text-[10px] text-[#9aa0bb] mt-0.5 leading-snug">
-          接入 OCR 服务后可自动识别文字，当前以文件信息参与模拟分析
+          请将图片中的文字粘贴至上方文本框，AI 基于文字内容分析
         </p>
       </div>
       <button
@@ -355,12 +351,7 @@ export default function Home() {
     setAnalyzeError(null);
     setActiveQA(null);
     try {
-      const data = await callAnalyzeAPI(
-        resume,
-        jd,
-        resumePreview,  // base64 data URL if image was uploaded
-        jdPreview
-      );
+      const data = await callAnalyzeAPI(resume, jd);
       setResult(data);
       setTimeout(
         () => resultRef.current?.scrollIntoView({ behavior: "smooth" }),
