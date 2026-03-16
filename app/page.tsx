@@ -621,7 +621,7 @@ export default function Home() {
             </NeuCard>
 
             <p className="text-center text-[11px] text-[#b8bdd4] pb-4">
-              以上内容由模拟 AI 生成，仅供参考。接入真实 LLM API 后将提供个性化分析。
+              以上内容由 GLM-4-Flash 生成，仅供参考，请结合实际情况判断。
             </p>
           </div>
         )}
