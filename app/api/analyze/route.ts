@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 const GLM_API = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
-// glm-4v-flash only accepts public URLs (not base64); use glm-4-flash for all text analysis
-const MODEL = "glm-4-flash";
+const MODEL_TEXT = "glm-4-flash";
+const MODEL_VISION = "glm-4v-flash";
 
-function buildPrompt(resume: string, jd: string): string {
-  return `你是一位以严苛著称的硅谷资深技术 HR，兼任 Staff Engineer 级别的代码审查官。你的任务是对以下简历与 JD 做"工程级"深度评审，杜绝一切"逻辑通顺但无实际价值"的废话。
+const SYSTEM_INSTRUCTION = `你是一位以严苛著称的硅谷资深技术 HR，兼任 Staff Engineer 级别的代码审查官。你的任务是对以下简历与 JD 做"工程级"深度评审，杜绝一切"逻辑通顺但无实际价值"的废话。
 
 【防幻觉铁律 — 最高优先级，违反即重新生成】
 - suggestions 的 original 字段：必须是简历原文的逐字复制，一个字都不能改，不得补充、推断或虚构。
@@ -32,17 +31,42 @@ function buildPrompt(resume: string, jd: string): string {
 【输出格式】
 只输出一个合法 JSON 对象，禁止包含任何 markdown、注释、解释性文字，从第一个 { 开始到最后一个 } 结束：
 
-{"matchScore":整数,"gaps":["差距1","差距2"],"suggestions":[{"original":"简历原文逐字复制","improved":"STAR改写版","tip":"一句话缺陷"}],"interviewQA":[{"question":"基于简历漏洞的追问","answer":"STAR结构回答"}]}
+{"matchScore":整数,"gaps":["差距1","差距2"],"suggestions":[{"original":"简历原文逐字复制","improved":"STAR改写版","tip":"一句话缺陷"}],"interviewQA":[{"question":"基于简历漏洞的追问","answer":"STAR结构回答"}]}`;
 
----简历：
-${resume}
-
----岗位 JD：
-${jd}`;
+/** Build plain-text messages when no images are involved */
+function buildTextMessages(resume: string, jd: string) {
+  const content = `${SYSTEM_INSTRUCTION}\n\n---简历：\n${resume}\n\n---岗位 JD：\n${jd}`;
+  return [{ role: "user", content }];
 }
 
-function buildMessages(resume: string, jd: string) {
-  return [{ role: "user", content: buildPrompt(resume, jd) }];
+type VisionPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+/** Build vision messages when one or both inputs are images */
+function buildVisionMessages(
+  resume: string,
+  jd: string,
+  resumeImage?: string,
+  jdImage?: string
+) {
+  const parts: VisionPart[] = [{ type: "text", text: SYSTEM_INSTRUCTION }];
+
+  if (resumeImage) {
+    parts.push({ type: "text", text: "\n\n---简历（图片）：" });
+    parts.push({ type: "image_url", image_url: { url: resumeImage } });
+  } else {
+    parts.push({ type: "text", text: `\n\n---简历：\n${resume}` });
+  }
+
+  if (jdImage) {
+    parts.push({ type: "text", text: "\n\n---岗位 JD（图片）：" });
+    parts.push({ type: "image_url", image_url: { url: jdImage } });
+  } else {
+    parts.push({ type: "text", text: `\n\n---岗位 JD：\n${jd}` });
+  }
+
+  return [{ role: "user", content: parts }];
 }
 
 /** Robustly extract JSON from model output that may contain prose, fences, or comments */
@@ -75,19 +99,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "GLM_API_KEY not configured" }, { status: 500 });
   }
 
-  let body: { resume: string; jd: string };
+  let body: { resume: string; jd: string; resumeImage?: string; jdImage?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { resume, jd } = body;
-  if (!resume?.trim() || !jd?.trim()) {
+  const { resume, jd, resumeImage, jdImage } = body;
+
+  const hasResumeContent = resume?.trim() || resumeImage;
+  const hasJdContent = jd?.trim() || jdImage;
+  if (!hasResumeContent || !hasJdContent) {
     return NextResponse.json({ error: "resume and jd are required" }, { status: 400 });
   }
 
-  const messages = buildMessages(resume, jd);
+  const useVision = !!(resumeImage || jdImage);
+  const messages = useVision
+    ? buildVisionMessages(resume ?? "", jd ?? "", resumeImage, jdImage)
+    : buildTextMessages(resume, jd);
+  const model = useVision ? MODEL_VISION : MODEL_TEXT;
 
   let glmRes: Response;
   try {
@@ -97,7 +128,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: MODEL, messages, temperature: 0.5, max_tokens: 2048 }),
+      body: JSON.stringify({ model, messages, temperature: 0.5, max_tokens: 2048 }),
     });
   } catch (err) {
     console.error("GLM network error:", err);

@@ -97,11 +97,9 @@ async function parseFile(file: File): Promise<{ text: string; preview?: string }
     return { text };
   }
   if (IMAGE_TYPES.includes(file.type)) {
-    // Generate compressed preview for display; image is NOT sent to GLM (base64 unsupported)
     const compressed = await compressImage(file);
-    const placeholder =
-      `[图片已上传：${file.name}（${(file.size / 1024).toFixed(0)} KB）]\n\n` +
-      `请将图片中的文字内容手动粘贴到此处，AI 将基于文字内容进行分析。`;
+    // Use a short placeholder so isImagePlaceholder() can detect image mode
+    const placeholder = `[图片已上传：${file.name}（${(file.size / 1024).toFixed(0)} KB）]`;
     return { text: placeholder, preview: compressed };
   }
   // .txt / .md
@@ -110,12 +108,16 @@ async function parseFile(file: File): Promise<{ text: string; preview?: string }
 }
 
 // ─── Real API Call ────────────────────────────────────────────────────────────
-// glm-4v-flash only supports public URLs (not base64), so we send text only.
-async function callAnalyzeAPI(resume: string, jd: string): Promise<AnalysisResult> {
+async function callAnalyzeAPI(
+  resume: string,
+  jd: string,
+  resumeImage?: string,
+  jdImage?: string
+): Promise<AnalysisResult> {
   const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resume, jd }),
+    body: JSON.stringify({ resume, jd, resumeImage, jdImage }),
   });
 
   if (!res.ok) {
@@ -216,9 +218,9 @@ function ImagePreview({ src, onClear }: { src: string; onClear: () => void }) {
         <img src={src} alt="preview" className="w-full h-full object-cover" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] text-[#5b6af0] font-medium">图片预览</p>
+        <p className="text-[11px] text-[#5b6af0] font-medium">图片已就绪</p>
         <p className="text-[10px] text-[#9aa0bb] mt-0.5 leading-snug">
-          请将图片中的文字粘贴至上方文本框，AI 基于文字内容分析
+          将直接发 AI 视觉识别，无需手动粘贴文字
         </p>
       </div>
       <button
@@ -260,7 +262,7 @@ function InputCard({
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
-  const needsText = isImagePlaceholder(value);
+  const isImageMode = isImagePlaceholder(value);
 
   return (
     <NeuCard className="flex-1 p-8">
@@ -280,33 +282,16 @@ function InputCard({
         </div>
       </div>
 
-      {/* Yellow banner when image is uploaded but text not yet pasted */}
-      {needsText && (
-        <div
-          className="mb-3 px-3 py-2.5 rounded-xl flex items-start gap-2 text-xs"
-          style={{
-            background: "#fffbeb",
-            boxShadow: "inset 1px 1px 3px #e8d88a, inset -1px -1px 3px #fffef5",
-            color: "#92650a",
-          }}
-        >
-          <span className="flex-shrink-0 mt-0.5">✏️</span>
-          <span>
-            图片已上传为预览。请将图片中的文字<strong>复制粘贴</strong>到下方文本框，
-            AI 将基于文字内容进行分析。
-          </span>
-        </div>
-      )}
-
       <textarea
-        value={value}
+        value={isImageMode ? "" : value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={
+          isImageMode
+            ? "图片已就绪，AI 将直接识别图片内容。\n也可在此输入补充说明…"
+            : placeholder
+        }
         className="w-full h-48 resize-none bg-transparent text-sm leading-relaxed outline-none transition-colors duration-200"
-        style={{
-          color: needsText ? "#b8bdd4" : "#3d4166",
-          borderBottom: needsText ? "1.5px dashed #f59e0b" : "none",
-        }}
+        style={{ color: "#3d4166" }}
       />
 
       {preview && <ImagePreview src={preview} onClear={onClearPreview} />}
@@ -375,13 +360,20 @@ export default function Home() {
   );
 
   const onAnalyze = async () => {
-    if (!resume.trim() || !jd.trim()) return;
+    if (!canAnalyze) return;
     setAnalyzing(true);
     setResult(null);
     setAnalyzeError(null);
     setActiveQA(null);
     try {
-      const data = await callAnalyzeAPI(resume, jd);
+      const resumeImg = isImagePlaceholder(resume) ? resumePreview : undefined;
+      const jdImg = isImagePlaceholder(jd) ? jdPreview : undefined;
+      const data = await callAnalyzeAPI(
+        resumeImg ? "" : resume,
+        jdImg ? "" : jd,
+        resumeImg,
+        jdImg
+      );
       setResult(data);
       setTimeout(
         () => resultRef.current?.scrollIntoView({ behavior: "smooth" }),
@@ -394,8 +386,10 @@ export default function Home() {
     }
   };
 
-  const resumeReady = resume.trim().length > 0 && !isImagePlaceholder(resume);
-  const jdReady = jd.trim().length > 0 && !isImagePlaceholder(jd);
+  const resumeReady =
+    (resume.trim().length > 0 && !isImagePlaceholder(resume)) || !!resumePreview;
+  const jdReady =
+    (jd.trim().length > 0 && !isImagePlaceholder(jd)) || !!jdPreview;
   const canAnalyze = resumeReady && jdReady;
   const scoreColor = result ? getScoreColor(result.matchScore) : "#5b6af0";
 
