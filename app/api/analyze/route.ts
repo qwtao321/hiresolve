@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 const GLM_API = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
 const MODEL_TEXT = "glm-4-flash";
-const MODEL_VISION = "glm-4v";
+// glm-4v-flash: free but does NOT support base64 images (URL only)
+// glm-4.1v-thinking-flash: free, supports base64, 64K context
+const MODEL_VISION = "glm-4.1v-thinking-flash";
 
 const SYSTEM_INSTRUCTION = `你是一位以严苛著称的硅谷资深技术 HR，兼任 Staff Engineer 级别的代码审查官。你的任务是对以下简历与 JD 做"工程级"深度评审，杜绝一切"逻辑通顺但无实际价值"的废话。
 
@@ -157,7 +159,11 @@ export async function POST(req: NextRequest) {
   }
 
   const glmData = await glmRes.json();
-  const rawContent: string = glmData.choices?.[0]?.message?.content ?? "";
+  // Thinking models expose reasoning in reasoning_content; actual answer is in content.
+  // Fallback: strip <think>...</think> blocks if they appear inline in content.
+  let rawContent: string =
+    glmData.choices?.[0]?.message?.content ?? "";
+  rawContent = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 
   const cleaned = extractJSON(rawContent);
 
