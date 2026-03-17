@@ -309,7 +309,7 @@ function InputCard({
         <span className="text-[10px] text-[#b8bdd4]">
           TXT · MD · PDF · JPG · PNG · WEBP · GIF
         </span>
-        {value && !preview && !needsText && (
+        {value && !preview && !isImageMode && (
           <span className="ml-auto text-[11px] text-[#9aa0bb]">{value.length} 字符</span>
         )}
       </div>
