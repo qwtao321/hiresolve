@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const GLM_API = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
 const MODEL_TEXT = "glm-4-flash";
-const MODEL_VISION = "glm-4v-flash";
+const MODEL_VISION = "glm-4v";
 
 const SYSTEM_INSTRUCTION = `你是一位以严苛著称的硅谷资深技术 HR，兼任 Staff Engineer 级别的代码审查官。你的任务是对以下简历与 JD 做"工程级"深度评审，杜绝一切"逻辑通顺但无实际价值"的废话。
 
@@ -43,28 +43,35 @@ type VisionPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
-/** Build vision messages when one or both inputs are images */
+/** Build vision messages when one or both inputs are images.
+ *  GLM-4V requires: all image_url parts first, then a single text part. */
 function buildVisionMessages(
   resume: string,
   jd: string,
   resumeImage?: string,
   jdImage?: string
 ) {
-  const parts: VisionPart[] = [{ type: "text", text: SYSTEM_INSTRUCTION }];
+  const parts: VisionPart[] = [];
 
+  // Images must come before text for GLM-4V
   if (resumeImage) {
-    parts.push({ type: "text", text: "\n\n---简历（图片）：" });
     parts.push({ type: "image_url", image_url: { url: resumeImage } });
-  } else {
-    parts.push({ type: "text", text: `\n\n---简历：\n${resume}` });
+  }
+  if (jdImage) {
+    parts.push({ type: "image_url", image_url: { url: jdImage } });
   }
 
-  if (jdImage) {
-    parts.push({ type: "text", text: "\n\n---岗位 JD（图片）：" });
-    parts.push({ type: "image_url", image_url: { url: jdImage } });
+  // Single combined text block after images
+  let context = "";
+  if (resumeImage && jdImage) {
+    context = "第一张图片是求职者简历，第二张图片是岗位 JD。";
+  } else if (resumeImage) {
+    context = `上面图片是求职者的简历。\n\n---岗位 JD：\n${jd}`;
   } else {
-    parts.push({ type: "text", text: `\n\n---岗位 JD：\n${jd}` });
+    context = `---简历：\n${resume}\n\n上面图片是岗位 JD。`;
   }
+
+  parts.push({ type: "text", text: `${SYSTEM_INSTRUCTION}\n\n${context}` });
 
   return [{ role: "user", content: parts }];
 }
